@@ -2,7 +2,7 @@ package io.hhplus.tdd.point;
 
 import io.hhplus.tdd.database.PointHistoryTable;
 import io.hhplus.tdd.database.UserPointTable;
-import lombok.AllArgsConstructor;
+import io.hhplus.tdd.exception.UserNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -30,27 +30,27 @@ public class PointController {
      * TODO - 특정 유저의 포인트를 조회하는 기능을 작성해주세요.
      */
     @GetMapping("{id}")
-    public UserPoint point(@PathVariable Long id)  {
-        try {
-            return userPointTable.selectById(id);
-        } catch (Exception e) {
-            log.error("Error retrieving user point for id: {}", id, e);
-            return new UserPoint(id, 0L, System.currentTimeMillis());
+    public UserPoint point(@PathVariable Long id) throws InterruptedException {
+        if (id == null){
+            throw new IllegalArgumentException("ID must be provided");
         }
+        UserPoint userPoint = userPointTable.selectById(id);
+        if (userPoint == null) {
+            throw new UserNotFoundException("User not found");
+        }
+        return userPoint;
     }
 
     /**
      * TODO - 특정 유저의 포인트 충전/이용 내역을 조회하는 기능을 작성해주세요.
      */
     @GetMapping("{id}/histories")
-    public List<PointHistory> history(@PathVariable Long id) {
-//        return Collections.emptyList();
-        try {
-            return pointHistoryTable.selectAllByUserId(id);
-        } catch (Exception e) {
-            log.error("Error retrieving user's point history for id: {}", id, e);
-            return Collections.emptyList();
+    public List<PointHistory> history(@PathVariable Long id) throws InterruptedException {
+        UserPoint chkUser = userPointTable.selectById(id);
+        if (chkUser == null){
+            throw new UserNotFoundException("User not found");
         }
+        return pointHistoryTable.selectAllByUserId(id);
     }
 
     /**
@@ -58,8 +58,14 @@ public class PointController {
      */
     @PatchMapping("{id}/charge")
     public UserPoint charge(@PathVariable Long id, @RequestBody Long amount) throws InterruptedException{
-//        return new UserPoint(0L, 0L, 0L);
-        return userPointTable.insertOrUpdate(id, amount);
+        if (amount < 0L){
+            throw new IllegalArgumentException("Amount must be a positive number.");
+        }
+        UserPoint chkUser = userPointTable.selectById(id);
+        if (chkUser == null) {
+            throw new UserNotFoundException("User not found");
+        }
+        return userPointTable.insertOrUpdate(id, chkUser.point() + amount);
     }
 
     /**
@@ -67,8 +73,14 @@ public class PointController {
      */
     @PatchMapping("{id}/use")
     public UserPoint use(@PathVariable Long id, @RequestBody Long amount) throws InterruptedException{
-//        return new UserPoint(0L, 0L, 0L);
-        pointHistoryTable.insert(id, amount, TransactionType.USE, 123L);
+        if (amount > 0L){
+            throw new IllegalArgumentException("Amount must be a negative number.");
+        }
+        UserPoint chkUser = userPointTable.selectById(id);
+        if (chkUser == null) {
+            throw new UserNotFoundException("User not found");
+        }
+        pointHistoryTable.insert(id, chkUser.point() - amount, TransactionType.USE, System.currentTimeMillis());
         return userPointTable.selectById(id);
     }
 }
