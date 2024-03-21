@@ -3,6 +3,7 @@ package io.hhplus.tdd.point;
 import io.hhplus.tdd.database.PointHistoryTable;
 import io.hhplus.tdd.database.UserPointTable;
 import io.hhplus.tdd.exception.UserNotFoundException;
+import io.hhplus.tdd.service.PointService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -37,7 +38,7 @@ public class PointServiceChargeTest {
     // - 업데이트하다 DB 예외 발생
     @Test
     @DisplayName("charge() 성공")
-    void 성공() {
+    void 성공() throws InterruptedException {
         // 셋업
         long userId = 123L;
         long amount = 100L;
@@ -57,7 +58,7 @@ public class PointServiceChargeTest {
     }
     @Test
     @DisplayName("charge()를 사용하였을때, 유저가 존재하지 않아 UserNotFoundException 을 호출하여야 한다.")
-    void pointGetNotExistentUser() {
+    void pointGetNotExistentUser() throws InterruptedException {
         // 셋업
         Long userId = 999L;
         when(userPointTable.selectById(userId)).thenThrow(new UserNotFoundException("User not found"));
@@ -73,7 +74,7 @@ public class PointServiceChargeTest {
 
     @Test
     @DisplayName("charge(), amount의 값이 음수를 입력하였을 때, IllegalArgumentException(\"Amount must be a positive number.\") 반환")
-    void chargeInputNegativeNum(){
+    void chargeInputNegativeNum() throws InterruptedException{
         // 실행, 검증
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
             pointService.patchCharge(123L, -1L);
@@ -85,7 +86,7 @@ public class PointServiceChargeTest {
 
     @Test
     @DisplayName("charge(), selectById()에서 데이터베이스 예외 발생")
-    void chargeSelectByIdDatabaseExceptionTest() {
+    void chargeSelectByIdDatabaseExceptionTest() throws InterruptedException {
         // 셋업
         long userId = 123L;
         long amount = 321L;
@@ -103,7 +104,7 @@ public class PointServiceChargeTest {
 
     @Test
     @DisplayName("charge(), insertOrUpdate()에서 데이터베이스 예외 발생")
-    void chargeInsertOrUpdateDatabaseExceptionTest() {
+    void chargeInsertOrUpdateDatabaseExceptionTest() throws InterruptedException {
         // 셋업
         long userId = 123L;
         long amount = 100L;
@@ -119,4 +120,13 @@ public class PointServiceChargeTest {
         assertEquals("Database connection error", exception.getMessage());
     }
 
+    @Test
+    @DisplayName("동시에 여러 스레드에서 사용자에 대한 포인트 충전 save")
+    void chargeTooManyAccessTest() throws InterruptedException {
+        // 셋업
+
+        // 실행
+
+        // 검증
+    }
 }

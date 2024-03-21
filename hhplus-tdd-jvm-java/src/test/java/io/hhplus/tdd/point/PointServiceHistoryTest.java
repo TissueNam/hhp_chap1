@@ -3,17 +3,19 @@ package io.hhplus.tdd.point;
 import io.hhplus.tdd.database.PointHistoryTable;
 import io.hhplus.tdd.database.UserPointTable;
 import io.hhplus.tdd.exception.UserNotFoundException;
+import io.hhplus.tdd.service.PointService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.times;
 
 public class PointServiceHistoryTest {
     UserPointTable userPointTable;
@@ -46,7 +48,7 @@ public class PointServiceHistoryTest {
 
     @Test
     @DisplayName("history() 성공")
-    void 성공(){
+    void 성공() throws InterruptedException {
         // 셋업
         Long userId = 123L;
 
@@ -65,7 +67,7 @@ public class PointServiceHistoryTest {
 
     @Test
     @DisplayName("history()을 사용하였을때, ID가 주어지지 않았을 때 Bad Request 응답")
-    void historyByNullIdTest(){
+    void historyByNullIdTest() throws InterruptedException{
         // 실행, 검증
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
             pointService.getHistory(null);
@@ -77,7 +79,7 @@ public class PointServiceHistoryTest {
 
     @Test
     @DisplayName("history()을 사용하였을때, 유저의 내역이 없는 경우 UserNotFoundException 을 호출")
-    void historyWithNoUserHistoryTest() {
+    void historyWithNoUserHistoryTest() throws InterruptedException {
         // 셋업
         Long userId = 999L;
         when(userPointTable.selectById(userId)).thenThrow(new UserNotFoundException("User not found"));
@@ -89,5 +91,51 @@ public class PointServiceHistoryTest {
 
         // 검증
         assertEquals("User not found", exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("동시에 여러 스레드에서 사용자 충전/사용 내역 조회")
+    void historyTooManyAccessTest() throws InterruptedException, ExecutionException {
+        // 셋업
+        long userId = 123;
+        int threadCount = 10;
+        List<PointHistory> expectedPointHistory = new ArrayList<>();
+        expectedPointHistory.add(new PointHistory(1, userId, 50, TransactionType.CHARGE, System.currentTimeMillis()));
+        expectedPointHistory.add(new PointHistory(2, userId, -20, TransactionType.USE, System.currentTimeMillis()));
+
+        when(userPointTable.selectById(userId)).thenReturn(new UserPoint(userId, 100L, System.currentTimeMillis()));
+        when(pointHistoryTable.selectAllByUserId(userId)).thenReturn(expectedPointHistory);
+
+        // 실행
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        List<Future<List<PointHistory>>> futures = new ArrayList<>();
+
+        for (int i = 0; i < threadCount; i++) {
+            Future<List<PointHistory>> future = executor.submit(() -> {
+                List<PointHistory> history = pointService.getHistory(userId);
+                System.out.println("Thread " + Thread.currentThread().getName() + " ->: " + history);
+                latch.countDown();
+                return history;
+            });
+            futures.add(future);
+        }
+        latch.await();
+
+        // 검증
+        for (Future<List<PointHistory>> future : futures) {
+            try {
+                List<PointHistory> res = future.get();
+                assertThat(res).isNotNull();
+                assertThat(res).containsExactlyInAnyOrderElementsOf(expectedPointHistory);
+            } catch (InterruptedException | ExecutionException e) {
+                e.printStackTrace();
+            }
+        }
+
+        verify(userPointTable, times(threadCount)).selectById(userId);
+        verify(pointHistoryTable, times(threadCount)).selectAllByUserId(userId);
+
+        executor.shutdown();
     }
 }
